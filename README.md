@@ -107,7 +107,7 @@ write.
 
 ## About this repository
 
-A work sample by [Maik Wimmer](https://www.upwork.com/freelancers/maikwimmer),
+A work sample by [Maik Wimmer](https://www.linkedin.com/in/maik-wimmer-166b2039a/),
 who builds data extraction and reporting automation — Python, Power Automate,
 Power BI, Excel.
 
