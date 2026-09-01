@@ -31,10 +31,15 @@ class InvoiceAdapter:
         raise NotImplementedError
 
 
-def _require(match: Optional[re.Match], field: str, adapter: str) -> str:
+def _require(match: Optional[re.Match], field: str, source: str, layout: str) -> str:
+    """Fail with the document named.
+
+    An error that says which adapter complained is useless when you are
+    looking at four hundred files. It has to say which document.
+    """
     if match is None:
         raise MissingFieldError(
-            f"{adapter}: no {field} found - the layout probably changed"
+            f"{source}: no {field} found - the {layout} layout probably changed"
         )
     return match.group(1).strip()
 
@@ -60,9 +65,10 @@ class MusterfirmaAdapter(InvoiceAdapter):
 
     def parse(self, content: PdfContent) -> Invoice:
         text = content.text
-        number = _require(self.number_re.search(text), "invoice number", self.name)
-        date_text = _require(self.date_re.search(text), "invoice date", self.name)
-        customer = _require(self.customer_re.search(text), "customer", self.name)
+        source = content.source_name or "document"
+        number = _require(self.number_re.search(text), "invoice number", source, self.name)
+        date_text = _require(self.date_re.search(text), "invoice date", source, self.name)
+        customer = _require(self.customer_re.search(text), "customer", source, self.name)
 
         items: List[LineItem] = []
         net = vat = gross = None
@@ -91,7 +97,7 @@ class MusterfirmaAdapter(InvoiceAdapter):
         for value, label in ((net, "net total"), (vat, "VAT"), (gross, "gross total")):
             if value is None:
                 raise MissingFieldError(
-                    f"{self.name}: no {label} found in invoice {number}"
+                    f"{source}: no {label} found in invoice {number}"
                 )
 
         return Invoice(

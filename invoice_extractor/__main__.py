@@ -27,10 +27,13 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        invoices = list(extract_folder(args.folder, keep_going=args.keep_going))
+        invoices, failures = extract_folder(args.folder, keep_going=args.keep_going)
     except ExtractionError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+
+    for failure in failures:
+        print(f"skipped: {failure}", file=sys.stderr)
 
     if not invoices:
         print(f"no PDFs found in {args.folder}", file=sys.stderr)
@@ -41,6 +44,8 @@ def main(argv=None) -> int:
     total = sum(invoice.gross for invoice in invoices)
     print(f"{len(invoices)} invoices, {items} line items -> {target}")
     print(f"total gross: {total:,.2f}")
+    if failures:
+        print(f"{len(failures)} document(s) skipped - see above", file=sys.stderr)
     return 0
 
 

@@ -1,0 +1,304 @@
+{
+  "name": "PDF-Rechnungen zu Excel",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/data/pdfs/*.pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        0
+      ],
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        0
+      ],
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Eine Rechnung aus dem PDF-Text lesen.\n// Regel wie in der Python-Fassung: eindeutig umwandeln, sonst abbrechen.\n// Jede Fehlermeldung nennt die Datei, sonst sucht man sich spaeter tot.\n\nconst datei = $('Read/Write Files from Disk').item.binary?.data?.fileName ?? 'unbekannt';\n\nfunction fail(msg) {\n  throw new Error(`${datei}: ${msg}`);\n}\n\nfunction amount(text) {\n  // Deutsche Schreibweise: Punkt gruppiert Tausender, Komma trennt Dezimalen.\n  const cleaned = String(text).trim();\n  if (!/^\\d{1,3}(\\.\\d{3})*(,\\d+)?$|^\\d+(,\\d+)?$/.test(cleaned)) {\n    fail(`kein wohlgeformter Betrag: \"${text}\"`);\n  }\n  return parseFloat(cleaned.replace(/\\./g, '').replace(',', '.'));\n}\n\nfunction need(re, text, field) {\n  const m = text.match(re);\n  if (!m) fail(`${field} nicht gefunden - Layout hat sich vermutlich geaendert`);\n  return m[1].trim();\n}\n\nconst text = $json.text;\n\n// Ein Adapter pro Layout. Unbekanntes Dokument wird abgelehnt, nicht geraten.\nif (!/MUSTERFIRMA/i.test(text)) {\n  fail('unbekanntes Layout - kein Adapter fuer diesen Lieferanten');\n}\n\nconst number   = need(/Rechnung Nr\\.\\s*(\\S+)/, text, 'Rechnungsnummer');\nconst dateText = need(/Rechnungsdatum:\\s*(\\S+)/, text, 'Rechnungsdatum');\nconst customer = need(/Kunde:\\s*(.+)/, text, 'Kunde');\n\n// Datum nur im ausdruecklich erwarteten Format - nicht raten lassen.\nconst dm = dateText.match(/^(\\d{2})\\.(\\d{2})\\.(\\d{4})$/);\nif (!dm) fail(`Datum \"${dateText}\" ist nicht tt.mm.jjjj`);\nconst date = `${dm[3]}-${dm[2]}-${dm[1]}`;\n\nlet net = null, vat = null, gross = null;\nconst items = [];\n\nfor (const raw of text.split('\\n')) {\n  const line = raw.trim();\n  if (!line || line.startsWith('Position ')) continue;\n\n  let m;\n  if ((m = line.match(/^Gesamtbetrag netto\\s+([\\d.,]+)$/))) { net = amount(m[1]); continue; }\n  if ((m = line.match(/^zzgl\\..*?\\s+([\\d.,]+)$/)))          { vat = amount(m[1]); continue; }\n  if ((m = line.match(/^Rechnungsbetrag\\s+([\\d.,]+)$/)))    { gross = amount(m[1]); continue; }\n\n  if ((m = line.match(/^(.+?)\\s+(\\d+)\\s+([\\d.,]+)\\s+([\\d.,]+)$/))) {\n    items.push({\n      beschreibung: m[1].trim(),\n      menge: parseInt(m[2], 10),\n      einzelpreis: amount(m[3]),\n      summe: amount(m[4]),\n    });\n  }\n}\n\nfor (const [value, label] of [[net, 'Nettosumme'], [vat, 'MwSt'], [gross, 'Bruttosumme']]) {\n  if (value === null) fail(`${label} fehlt in Rechnung ${number}`);\n}\n\n// Gegenprobe: Positionen muessen die Nettosumme ergeben.\nconst sum = Math.round(items.reduce((a, i) => a + i.summe, 0) * 100) / 100;\n\nreturn {\n  json: {\n    datei,\n    rechnungsnummer: number,\n    datum: date,\n    kunde: customer,\n    netto: net,\n    mwst: vat,\n    brutto: gross,\n    positionen: items.length,\n    positionssumme: sum,\n    stimmig: Math.abs(sum - net) < 0.01,\n    items,\n  },\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "name": "Code in JavaScript",
+      "retryOnFail": false,
+      "executeOnce": false,
+      "alwaysOutputData": false,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        0
+      ],
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/data/ausgabe/rechnungen.xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        0
+      ],
+      "name": "Read/Write Files from Disk1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aus jeder Rechnung wird je Position eine eigene Zeile.\n// Rechnungsnummer, Datum und Kunde wandern mit, damit jede Zeile\n// fuer sich lesbar ist und man sie spaeter zuordnen kann.\nconst zeilen = [];\n\nfor (const entry of $input.all()) {\n  const r = entry.json;\n  for (const pos of r.items ?? []) {\n    zeilen.push({\n      json: {\n        rechnungsnummer: r.rechnungsnummer,\n        datum: r.datum,\n        kunde: r.kunde,\n        beschreibung: pos.beschreibung,\n        menge: pos.menge,\n        einzelpreis: pos.einzelpreis,\n        summe: pos.summe,\n      },\n    });\n  }\n}\n\nif (zeilen.length === 0) {\n  throw new Error('keine Positionen gefunden - kamen die Rechnungen ohne Einzelposten?');\n}\n\nreturn zeilen;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -288
+      ],
+      "name": "Positionen flach"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        -288
+      ],
+      "name": "Convert to File1"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/data/ausgabe/positionen.xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        -288
+      ],
+      "name": "Read/Write Files from Disk2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Eine Zeile je Rechnung, ohne die verschachtelten Positionen.\n// Modus \"All Items\": wir bekommen den ganzen Stapel und geben eine Liste zurueck.\nreturn $input.all().map(entry => {\n  const { items, ...kopf } = entry.json;\n  return { json: kopf };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ],
+      "name": "Nur Kopfdaten"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Den Dateinamen direkt beim Lese-Knoten holen, nicht aus der Meldung parsen.\n// n8n kann den zugehoerigen Eintrag nur im Each-Item-Modus zuordnen.\nlet datei = 'unbekannt';\ntry {\n  datei = $('Read/Write Files from Disk').item.binary?.data?.fileName ?? 'unbekannt';\n} catch (e) {\n  // Zuordnung nicht aufloesbar - dann bleibt es bei \"unbekannt\"\n}\n\nconst roh = $json.error;\nlet problem = typeof roh === 'string' ? roh : (roh?.message ?? JSON.stringify(roh));\n\n// n8n haengt eine interne Zeilennummer an - fuer eine Pruefliste unbrauchbar.\nproblem = problem.replace(/\\s*\\[line \\d+\\]\\s*$/, '');\n\n// Falls die Meldung den Dateinamen doch mitbringt, nicht doppelt schreiben.\nif (problem.startsWith(datei + ': ')) {\n  problem = problem.slice(datei.length + 2);\n}\n\nreturn {\n  json: {\n    datei,\n    problem,\n    zeitpunkt: new Date().toISOString(),\n  },\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        592,
+        256
+      ],
+      "name": "Problemfälle sammeln"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        816,
+        256
+      ],
+      "name": "Convert to File2"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/pruefen/probleme_{{ $now.format('yyyy-MM-dd_HH-mm') }}.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1040,
+        256
+      ],
+      "name": "Read/Write Files from Disk3"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Nur Kopfdaten",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Positionen flach",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Problemfälle sammeln",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Positionen flach": {
+      "main": [
+        [
+          {
+            "node": "Convert to File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File1": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nur Kopfdaten": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Problemfälle sammeln": {
+      "main": [
+        [
+          {
+            "node": "Convert to File2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File2": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
