@@ -117,26 +117,43 @@ into any n8n instance via *Workflows → Import from File*. No credentials are
 stored in the file.
 
 ```
-Manual trigger
-  └─ Read files from disk        /data/pdfs/*.pdf
-      └─ Extract from file       PDF → text
-          └─ Code: parse         one invoice per item, or fail
-              ├─ Code: header rows  → XLSX → invoices.xlsx
-              ├─ Code: flatten items → XLSX → line-items.xlsx
-              └─ (error output)
-                  └─ Code: collect  → CSV → problems_<timestamp>.csv
+Schedule (every 15 min) ┐
+Manual trigger ─────────┴─ Read files from disk      /data/pdfs/*.pdf
+                             ├─ (error output: no files) → stop quietly
+                             └─ Extract from file     PDF → text
+                                 └─ Code: parse       one invoice per item, or fail
+                                     ├─ Code: header rows  → XLSX → invoices.xlsx
+                                     │   └─ Code: file away → /data/_beiseite ──┐
+                                     ├─ Code: flatten items → XLSX → line-items.xlsx
+                                     └─ (error output)                          │
+                                         └─ Code: collect → CSV → problems_<ts>.csv
+                                             └─ Code: file away → /data/pruefen ─┤
+                                                                                 │
+                                        Merge ◄───────────────────────────────────┘
+                                          └─ Code: one log line → append protokoll.txt
 ```
 
 The interesting part is the third branch. The parse node is set to
 **Continue (using error output)**, so a document that cannot be read leaves
-through a second output instead of killing the run. Three good invoices still
-reach the workbook while two broken ones are written to a dated problem report,
-named per document. That is the same contract as `--keep-going` on the Python
-side, and both were fixed to behave that way after the n8n build exposed that
-the Python one was throwing the good invoices away with the bad.
+through a second output instead of killing the run. Good invoices still reach
+the workbook while the broken ones are written to a dated problem report, named
+per document. That is the same contract as `--keep-going` on the Python side,
+and both were fixed to behave that way after the n8n build exposed that the
+Python one was throwing the good invoices away with the bad.
 
-Two things this workflow cost an evening to learn, recorded here because
-neither is in the documentation:
+Files are only moved out of the inbox **after both workbooks are written**. If
+anything fails earlier, the PDFs stay where they are and the next run picks them
+up again. Each run appends one line to `protokoll.txt`:
+
+```
+2026-09-11 11:51:23 | 2 gelesen | 1 fehlerhaft | brutto 1173.10
+    ! kaputt_ohne_nummer.pdf: Rechnungsnummer nicht gefunden - Layout hat sich vermutlich geaendert
+```
+
+### Five things this cost an evening to learn
+
+None of them are in the documentation, and the first three only surface on
+n8n 2.x.
 
 **The Code node has two modes and they are not interchangeable.** In *Run Once
 for All Items* the code runs once for the whole batch and `$json` is the
@@ -153,9 +170,33 @@ fails. The workflow fetches it from the reading node instead, via
 `$('Read/Write Files from Disk').item.binary.data.fileName`, which only
 resolves in *Each Item* mode.
 
-The node names and code comments are German, the language it was built in.
+**There is no Execute Command node any more.** It is gone from the official
+Docker image, so `mv` is not an option for filing processed documents away. The
+workflow uses `fs.renameSync` inside a Code node instead, which requires the
+container to run with `NODE_FUNCTION_ALLOW_BUILTIN=fs`.
 
----
+**`$now` is not a Luxon object inside the Code node.** Code runs in a separate
+task runner process, where `$now.format()` throws `is not a function`. Worse,
+that process ignores the container's `TZ`, so a hand-rolled `new Date()` stamp
+comes out two hours off in summer. Both are solved by asking for the zone
+explicitly:
+
+```js
+new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' })
+// → "2026-09-11 11:51:23", already almost ISO
+```
+
+Expressions in ordinary node fields are unaffected — they run in the main
+process and still honour `GENERIC_TIMEZONE`. Which is exactly how a run can end
+up writing `probleme_11-49.csv` next to a PDF stamped `09-49`.
+
+**An empty inbox is an error, not a no-op.** The read node throws
+`No file(s) found` when the glob matches nothing. Run by hand that is merely
+odd; on a 15-minute schedule it means a red execution four times an hour. The
+read node therefore has its own error output, leading to a No-Op node that ends
+the run quietly.
+
+The node names and code comments are German, the language it was built in.
 
 ## About this repository
 

@@ -22,7 +22,8 @@
         224,
         0
       ],
-      "name": "Read/Write Files from Disk"
+      "name": "Read/Write Files from Disk",
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -170,6 +171,101 @@
         256
       ],
       "name": "Read/Write Files from Disk3"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        176
+      ],
+      "name": "Zeitplan"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Zeitstempel ohne Luxon: im Task-Runner von n8n 2.x ist $now kein\n// DateTime-Objekt mehr, $now.format() gibt es dort nicht.\n// Die Zeitzone muss ausdruecklich mit - der Task-Runner laeuft in UTC,\n// auch wenn der Container auf Europe/Berlin steht.\nfunction stempelJetzt(mitSekunden) {\n  // 'sv-SE' liefert 2026-09-11 11:48:53, also schon fast ISO.\n  const s = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' });\n  return mitSekunden ? s : s.slice(0, 10) + '_' + s.slice(11, 16).replace(':', '-');\n}\n\n// Verarbeitete Dokumente wegraeumen.\n// Erst jetzt, nachdem beide Mappen geschrieben sind - bricht vorher etwas\n// ab, bleiben die PDFs liegen und der naechste Lauf holt sie erneut.\n//\n// Kein Execute-Command-Knoten: den gibt es im offiziellen n8n-Image nicht\n// mehr. Stattdessen fs direkt, dafuer braucht der Container\n// NODE_FUNCTION_ALLOW_BUILTIN=fs.\nconst fs = require('fs');\n\nconst stempel = stempelJetzt(false);\nconst gesehen = new Set();\nconst ergebnis = [];\n\nfor (const eintrag of $('Nur Kopfdaten').all()) {\n  const datei = eintrag.json.datei;\n  if (!datei || datei === 'unbekannt' || gesehen.has(datei)) continue;\n  gesehen.add(datei);\n\n  const von = `/data/pdfs/${datei}`;\n  const nach = `/data/_beiseite/${stempel}_${datei}`;\n\n  try {\n    fs.renameSync(von, nach);\n    ergebnis.push({ json: { datei, ziel: nach, verschoben: true, art: 'gelesen' } });\n  } catch (e) {\n    // Nicht den ganzen Lauf abbrechen - die Mappen sind schon geschrieben.\n    ergebnis.push({ json: { datei, verschoben: false, fehler: e.message, art: 'gelesen' } });\n  }\n}\n\n// Nie leer zurueckgeben, sonst laeuft der Protokollzweig dahinter nicht an.\nif (ergebnis.length === 0) {\n  return [{ json: { datei: null, verschoben: false, hinweis: 'nichts zu verschieben', art: 'gelesen' } }];\n}\n\nreturn ergebnis;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        0
+      ],
+      "name": "Verarbeitete wegraeumen"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Zeitstempel ohne Luxon: im Task-Runner von n8n 2.x ist $now kein\n// DateTime-Objekt mehr, $now.format() gibt es dort nicht.\n// Die Zeitzone muss ausdruecklich mit - der Task-Runner laeuft in UTC,\n// auch wenn der Container auf Europe/Berlin steht.\nfunction stempelJetzt(mitSekunden) {\n  // 'sv-SE' liefert 2026-09-11 11:48:53, also schon fast ISO.\n  const s = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' });\n  return mitSekunden ? s : s.slice(0, 10) + '_' + s.slice(11, 16).replace(':', '-');\n}\n\n// Verarbeitete Dokumente wegraeumen.\n// Erst jetzt, nachdem beide Mappen geschrieben sind - bricht vorher etwas\n// ab, bleiben die PDFs liegen und der naechste Lauf holt sie erneut.\n//\n// Kein Execute-Command-Knoten: den gibt es im offiziellen n8n-Image nicht\n// mehr. Stattdessen fs direkt, dafuer braucht der Container\n// NODE_FUNCTION_ALLOW_BUILTIN=fs.\nconst fs = require('fs');\n\nconst stempel = stempelJetzt(false);\nconst gesehen = new Set();\nconst ergebnis = [];\n\nfor (const eintrag of $('Problemfälle sammeln').all()) {\n  const datei = eintrag.json.datei;\n  if (!datei || datei === 'unbekannt' || gesehen.has(datei)) continue;\n  gesehen.add(datei);\n\n  const von = `/data/pdfs/${datei}`;\n  const nach = `/data/pruefen/${stempel}_${datei}`;\n\n  try {\n    fs.renameSync(von, nach);\n    ergebnis.push({ json: { datei, ziel: nach, verschoben: true, art: 'fehlerhaft' } });\n  } catch (e) {\n    // Nicht den ganzen Lauf abbrechen - die Mappen sind schon geschrieben.\n    ergebnis.push({ json: { datei, verschoben: false, fehler: e.message, art: 'fehlerhaft' } });\n  }\n}\n\n// Nie leer zurueckgeben, sonst laeuft der Protokollzweig dahinter nicht an.\nif (ergebnis.length === 0) {\n  return [{ json: { datei: null, verschoben: false, hinweis: 'nichts zu verschieben', art: 'fehlerhaft' } }];\n}\n\nreturn ergebnis;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        256
+      ],
+      "name": "Problemfaelle beiseite"
+    },
+    {
+      "parameters": {
+        "numberInputs": 2
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2016,
+        128
+      ],
+      "name": "Zweige zusammenfuehren"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Zeitstempel ohne Luxon: im Task-Runner von n8n 2.x ist $now kein\n// DateTime-Objekt mehr, $now.format() gibt es dort nicht.\n// Die Zeitzone muss ausdruecklich mit - der Task-Runner laeuft in UTC,\n// auch wenn der Container auf Europe/Berlin steht.\nfunction stempelJetzt(mitSekunden) {\n  // 'sv-SE' liefert 2026-09-11 11:48:53, also schon fast ISO.\n  const s = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' });\n  return mitSekunden ? s : s.slice(0, 10) + '_' + s.slice(11, 16).replace(':', '-');\n}\n\n// Eine Zeile je Lauf, angehaengt an /data/ausgabe/protokoll.txt.\n// Die Zahlen kommen von den Quellknoten, nicht aus dem Merge-Eingang -\n// so stimmt die Zaehlung auch, wenn ein Zweig gar nicht gelaufen ist.\nconst zeitpunkt = stempelJetzt(true);\n\nfunction eintraege(knoten) {\n  try {\n    return $(knoten).all().filter(e => e.json && Object.keys(e.json).length > 0);\n  } catch (e) {\n    return [];   // Zweig ist in diesem Lauf nicht angelaufen\n  }\n}\n\nconst gelesen = eintraege('Nur Kopfdaten');\nconst fehler  = eintraege('Problemf\\u00e4lle sammeln');\n\nconst summe = gelesen.reduce((a, e) => a + (e.json.brutto ?? 0), 0);\nconst unstimmig = gelesen.filter(e => e.json.stimmig === false).map(e => e.json.datei);\n\nlet zeile = `${zeitpunkt} | ${gelesen.length} gelesen | ${fehler.length} fehlerhaft`;\nzeile += ` | brutto ${summe.toFixed(2)}`;\n\nif (unstimmig.length) {\n  zeile += ` | Positionssumme weicht ab: ${unstimmig.join(', ')}`;\n}\nfor (const e of fehler) {\n  zeile += `\\n    ! ${e.json.datei}: ${e.json.problem}`;\n}\n\nconst text = zeile + '\\n';\nconst binaer = await this.helpers.prepareBinaryData(Buffer.from(text, 'utf8'),\n                                                   'protokoll.txt', 'text/plain');\n\nreturn [{\n  json: { zeitpunkt, gelesen: gelesen.length, fehlerhaft: fehler.length },\n  binary: { data: binaer },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        128
+      ],
+      "name": "Protokollzeile"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/data/ausgabe/protokoll.txt",
+        "options": {
+          "append": true
+        }
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        128
+      ],
+      "name": "Protokoll schreiben"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        448,
+        208
+      ],
+      "name": "Nichts zu tun",
+      "notes": "Eingangsordner leer - der Lauf endet hier still.",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -189,6 +285,13 @@
         [
           {
             "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nichts zu tun",
             "type": "main",
             "index": 0
           }
@@ -289,6 +392,83 @@
         [
           {
             "node": "Read/Write Files from Disk3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zeitplan": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk1": {
+      "main": [
+        [
+          {
+            "node": "Verarbeitete wegraeumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verarbeitete wegraeumen": {
+      "main": [
+        [
+          {
+            "node": "Zweige zusammenfuehren",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk3": {
+      "main": [
+        [
+          {
+            "node": "Problemfaelle beiseite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Problemfaelle beiseite": {
+      "main": [
+        [
+          {
+            "node": "Zweige zusammenfuehren",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Zweige zusammenfuehren": {
+      "main": [
+        [
+          {
+            "node": "Protokollzeile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Protokollzeile": {
+      "main": [
+        [
+          {
+            "node": "Protokoll schreiben",
             "type": "main",
             "index": 0
           }
