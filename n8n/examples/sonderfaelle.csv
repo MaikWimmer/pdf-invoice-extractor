@@ -1,0 +1,9 @@
+﻿rechnungsnummer;rechnungsdatum;kundennummer;kunde;strasse;plz_ort;position;beschreibung;menge;einheit;einzelpreis;mwst_satz
+2026-0301;18.09.2026;K-7001;"Müller & Söhne; Getränke";Musterallee 5;83454 Anger;1;"Kiste ""Helles"" 20x0,5 l";12;Kiste;16,90;19
+2026-0301;18.09.2026;K-7001;"Müller & Söhne; Getränke";Musterallee 5;83454 Anger;2;Pfand – Kasten inkl. Flaschen;12;Stk;3,10;0
+2026-0301;18.09.2026;K-7001;"Müller & Söhne; Getränke";Musterallee 5;83454 Anger;3;Sonderpreis ✓ Rabatt 50 €;1;Stk;-50,00;19
+
+2026-0302;18.09.2026;K-7002;Kiosk am See;Beispielsee 1;83457 Bayerisch Gmain;1;Zeitschriften;1.250,00
+2026-0303;18.09.2026;K-7003;Imkerei Hofer;Probeweg 3;83454 Anger;1;Honig 500 g, Glas;1.200;Stk;6,50;7
+2026-0303;18.09.2026;K-7003;Imkerei Hofer;Probeweg 3;83454 Anger;2;Honig 250 g, Glas;2;Stk;3,90;7
+2026-0304;18.09.2026;K-7004;Sägewerk Aschauer;Mustertal 20;83454 Anger;1;Kantholz 8x8;1.2.00;lfm;4,20;19

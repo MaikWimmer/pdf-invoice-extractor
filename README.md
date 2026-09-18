@@ -5,7 +5,9 @@ to guess when a document is ambiguous.
 
 The same problem is solved twice here: once as a Python package with a test
 suite, and once as an [n8n workflow](n8n/). Both follow the same rules, which
-is the point — the discipline is in the design, not in the tool.
+is the point — the discipline is in the design, not in the tool. A second
+workflow runs the other way, [from CSV rows to invoice PDFs](#the-other-direction-csv-rows-to-invoice-pdfs),
+under the same rules.
 
 ```
 $ python -m invoice_extractor examples/pdfs demo.xlsx
@@ -197,6 +199,89 @@ read node therefore has its own error output, leading to a No-Op node that ends
 the run quietly.
 
 The node names and code comments are German, the language it was built in.
+
+---
+
+## The other direction: CSV rows to invoice PDFs
+
+[`n8n/csv-to-invoice-pdf.json`](n8n/csv-to-invoice-pdf.json) takes line-item
+exports — the kind an ERP, a shop system or a spreadsheet produces — and writes
+one finished invoice PDF per invoice number. Same inbox pattern, same rules:
+nothing is guessed, and a document that would be incomplete is not written.
+
+![Generated invoice](n8n/examples/invoice-preview.png)
+
+```
+Schedule (every 15 min) ┐
+Manual trigger ─────────┴─ Read files from disk      /data/csv/*.csv
+                             ├─ (error output: no files) → stop quietly
+                             └─ Code: read CSV        delimiter detected, RFC 4180 quoting
+                                 └─ Code: validate    one item per invoice, or a problem
+                                     └─ IF complete?
+                                         ├─ Code: build PDF → /data/ausgabe/rechnungen/ ─┐
+                                         └─ Code: problem report → problemfaelle_<ts>.csv ┤
+                                                                                          │
+                                       Merge ◄────────────────────────────────────────────┘
+                                         └─ Code: file away   clean → _beiseite, flagged → pruefen
+                                             └─ Code: one log line → append protokoll.txt
+```
+
+**The PDF is written by hand, in under 400 lines of plain JavaScript.** The
+official n8n image has no PDF library and no way to install one, and the usual
+answer — send the data to an HTML-to-PDF web service — means invoice data
+leaving the building and an API key in the workflow. A PDF built from the
+fourteen standard fonts is a manageable format, though: a handful of objects, a
+cross-reference table of byte offsets, a trailer. The node carries the Helvetica
+glyph widths so amounts can be right-aligned, breaks long invoices across pages
+with a repeated table header, and numbers the pages. The text stays real text:
+the PDF is searchable and copy-paste gives back the umlauts.
+
+The rules, and the test file that exercises each one
+([`n8n/examples/`](n8n/examples/)):
+
+| Situation | What happens |
+|---|---|
+| `1.234` in a price column | Rejected as ambiguous — 1234 in German, 1.234 in English. Same rule as the Python side. |
+| `1.2.00` | Rejected as a malformed thousands grouping instead of silently becoming 1200. |
+| `31.02.2026` | Rejected: the format is right, the day does not exist. |
+| A VAT rate of 5 % | Rejected: only the configured rates (0, 7, 19) are accepted. |
+| Two rows of one invoice name different customers | The invoice is withheld; "first row wins" is exactly the kind of guess this avoids. |
+| Position 1 appears twice | The invoice is withheld. |
+| **One bad row in an otherwise good invoice** | **The whole invoice is withheld.** A PDF built from the remaining rows would be a plausible-looking invoice with a line missing. |
+| A character outside the font's range (`✓`) | Replaced with `?`, and the replacement is named in the run log so nobody sends a mangled PDF unaware. |
+| Semicolons and quotes inside quoted fields, a BOM from Excel, blank lines | Read correctly. |
+
+The delimiter is detected from the header row rather than configured, and a tie
+between two candidates is an error. `Extract from File` was the obvious choice
+and was dropped for this reason: it picks a delimiter itself, and a German
+semicolon file read as comma-separated arrives as a single column, three nodes
+before anything complains.
+
+That one-bad-row case was not in the first version. It came out of the test
+bench, which runs the Code nodes outside n8n against the sample files — the
+invoice with two rows, one of them broken, produced a tidy one-line PDF. The
+workflow now counts rows per invoice number and refuses to build any invoice
+with a rejected row.
+
+Processed files are sorted by outcome: a file where everything went through
+goes to `_beiseite`, a file with at least one problem goes to `pruefen`, so the
+folder itself says where someone needs to look. Good invoices from a flagged
+file are still produced; putting the corrected file back regenerates them under
+the same file name, so they are overwritten rather than duplicated.
+
+```
+2026-09-18 15:19:03 | 3 Datei(en) | 51 Zeilen | 5 PDF | 10 beanstandet | brutto 1659.23
+    ~ Zeichen ersetzt: ✓
+    ! stoerfaelle.csv Zeile 2: "1.234" ist zweideutig - bitte den Dezimaltrenner "," benutzen
+    ! sonderfaelle.csv 2026-0303: Keine Rechnung erstellt: 1 von 2 Zeilen fehlerhaft, das PDF waere unvollstaendig
+```
+
+The sender block, payment terms and allowed VAT rates are constants at the top
+of their Code nodes — the only places a new user needs to edit.
+
+**One more thing n8n does not tell you:** the Code node has a single output. A
+validation step that wants to send good and bad items different ways cannot do
+it by returning two lists; it marks each item and an IF node splits them.
 
 ## About this repository
 

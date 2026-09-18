@@ -1,0 +1,35 @@
+rechnungsnummer;rechnungsdatum;kundennummer;kunde;strasse;plz_ort;position;beschreibung;menge;einheit;einzelpreis;mwst_satz
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;1;Weizenmehl Type 550, Sack;2;Sack;24,9;7
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;2;Roggenmehl Type 1150, Sack;1;Stk;27,5;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;3;Backhefe frisch, Würfel;5;kg;3,4;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;4;Meersalz grob, Beutel;3;Beutel;8,95;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;5;Vollmilch 3,5 %, Kanne;10;Sack;1,29;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;6;Butter ungesalzen, Block;4;Stk;7,8;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;7;Zucker fein, Sack;1;kg;19,9;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;8;Sonnenblumenkerne, Beutel;2;Beutel;6,45;7
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;9;Leinsamen geschrotet, Beutel;2;Sack;24,9;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;10;Sauerteigansatz flüssig;1;Stk;27,5;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;11;Backmalz dunkel, Dose;5;kg;3,4;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;12;Kürbiskerne, Beutel;3;Beutel;8,95;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;13;Haferflocken zart, Sack;10;Sack;1,29;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;14;Dinkelmehl Type 630, Sack;4;Stk;7,8;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;15;Backpapier Bogen 60x40;1;kg;19,9;7
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;16;Gebäcktüten bedruckt;2;Beutel;6,45;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;17;Transportkiste Kunststoff;2;Sack;24,9;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;18;Reinigungsmittel Backstube;1;Stk;27,5;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;19;Einweghandschuhe Gr. M;5;kg;3,4;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;20;Etiketten Zutatenliste;3;Beutel;8,95;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;21;Hagelzucker, Beutel;10;Sack;1,29;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;22;Mandelblättchen, Beutel;4;Stk;7,8;7
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;23;Rosinen Sultana, Beutel;1;kg;19,9;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;24;Vanillearoma flüssig;2;Beutel;6,45;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;25;Zimt gemahlen, Dose;2;Sack;24,9;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;26;Eier Größe M, Palette;1;Stk;27,5;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;27;Quark 40 %, Eimer;5;kg;3,4;19
+2026-0117;14.09.2026;K-1042;Bäckerei Gschwendtner GmbH;Musterstraße 14;83454 Anger;28;Puderzucker, Beutel;3;Beutel;8,95;19
+2026-0118;15.09.2026;K-2087;Hofladen Grünbichler e.K.;Beispielgasse 3;83483 Bischofswiesen;1;Kartoffeln festkochend;25;kg;1,15;7
+2026-0118;15.09.2026;K-2087;Hofladen Grünbichler e.K.;Beispielgasse 3;83483 Bischofswiesen;2;Zwiebeln gelb;10;kg;0,98;7
+2026-0118;15.09.2026;K-2087;Hofladen Grünbichler e.K.;Beispielgasse 3;83483 Bischofswiesen;3;Lieferung frei Haus;1;Fahrt;18,50;19
+2026-0119;16.09.2026;K-3311;Gasthof Beispielwirt;Musterplatz 8;83435 Bad Reichenhall;1;Wartung Kühlanlage, Pauschale;1;Pauschale;240,00;19
+2026-0119;16.09.2026;K-3311;Gasthof Beispielwirt;Musterplatz 8;83435 Bad Reichenhall;2;Ersatzteil Thermostat;2;Stk;43,90;19
+2026-0119;16.09.2026;K-3311;Gasthof Beispielwirt;Musterplatz 8;83435 Bad Reichenhall;3;Anfahrt;1;Fahrt;0,00;19

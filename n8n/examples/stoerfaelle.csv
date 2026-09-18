@@ -1,0 +1,11 @@
+rechnungsnummer;rechnungsdatum;kundennummer;kunde;strasse;plz_ort;position;beschreibung;menge;einheit;einzelpreis;mwst_satz
+2026-0201;17.09.2026;K-5001;Metzgerei Huber;Probeweg 2;83454 Anger;1;Rindfleisch Hüfte;5;kg;1.234;19
+2026-0202;31.02.2026;K-5002;Café Seeblick;Beispielufer 9;83457 Bayerisch Gmain;1;Kuchenplatte gemischt;2;Stk;34,90;7
+2026-0203;18.09.2026;K-5003;Pension Alpenblick;Musterberg 11;83471 Berchtesgaden;1;Übernachtung Doppelzimmer;3;Nacht;89,00;5
+2026-0204;18.09.2026;K-5004;Autohaus Seidl;Beispielring 4;83435 Bad Reichenhall;1;Ölwechsel;1;Pauschale;79,00;19
+2026-0204;18.09.2026;K-5004;Autohaus Seidl GmbH;Beispielring 4;83435 Bad Reichenhall;2;Bremsflüssigkeit;1;Liter;14,50;19
+2026-0205;19.09.2026;K-5005;Blumen Mayr;Musterplatz 1;83454 Anger;1;Strauß gemischt;3;Stk;18,00;7
+2026-0205;19.09.2026;K-5005;Blumen Mayr;Musterplatz 1;83454 Anger;1;Vase Glas;1;Stk;12,00;19
+2026-0206;19.09.2026;K-5006;Schreinerei Lechner;Probestraße 7;83483 Bischofswiesen;1;;4;Stk;65,00;19
+2026-0207;19.09.2026;K-5007;Musterapotheke;Beispielstraße 12;83435 Bad Reichenhall;1;Regalsystem Montage;1,5;Std;68,00;19
+2026-0207;19.09.2026;K-5007;Musterapotheke;Beispielstraße 12;83435 Bad Reichenhall;2;Kleinteile;1;Satz;23,45;19

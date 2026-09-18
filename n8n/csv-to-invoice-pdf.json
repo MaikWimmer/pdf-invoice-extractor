@@ -1,0 +1,389 @@
+{
+  "id": "csvZuPdfWf000001",
+  "name": "CSV zu Rechnungs-PDF",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "name": "Manuell starten"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        208
+      ],
+      "name": "Zeitplan"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/data/csv/*.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        96
+      ],
+      "name": "CSV-Dateien lesen",
+      "onError": "continueErrorOutput",
+      "notes": "Dateimuster gehoert in den Selektor, nicht in die Option \"File Extension\"."
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        448,
+        288
+      ],
+      "name": "Nichts zu tun",
+      "notes": "Eingangsordner leer - der Lauf endet hier still.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---------------------------------------------------------------------------\n// CSV-Dateien in einzelne Zeilen zerlegen.\n// Modus: \"Run Once for All Items\" - herein kommt ein Eintrag je Datei,\n// heraus geht ein Eintrag je Datenzeile.\n//\n// Warum nicht der Knoten \"Extract from File\": der entscheidet das Trennzeichen\n// selbst. Bei deutschen Dateien ist das Semikolon ueblich, bei englischen das\n// Komma - und wer hier falsch raet, bekommt eine einzige Spalte und merkt es\n// erst drei Schritte spaeter. Das Trennzeichen wird deshalb an der Kopfzeile\n// festgestellt und bei Gleichstand abgelehnt.\n// ---------------------------------------------------------------------------\n\nconst TRENNZEICHEN = [';', ',', '\\t', '|'];\n\n// Zerlegt nach RFC 4180: Anfuehrungszeichen schuetzen Trennzeichen und\n// Zeilenumbrueche, ein doppeltes Anfuehrungszeichen steht fuer sich selbst.\nfunction zerlegen(text, trenner) {\n  const zeilen = [];\n  let feld = '', zeile = [], inAnfuehrung = false;\n\n  for (let i = 0; i < text.length; i++) {\n    const z = text[i];\n    if (inAnfuehrung) {\n      if (z === '\"') {\n        if (text[i + 1] === '\"') { feld += '\"'; i++; } else { inAnfuehrung = false; }\n      } else { feld += z; }\n      continue;\n    }\n    if (z === '\"' && feld === '') { inAnfuehrung = true; continue; }\n    if (z === trenner) { zeile.push(feld); feld = ''; continue; }\n    if (z === '\\r') continue;\n    if (z === '\\n') { zeile.push(feld); zeilen.push(zeile); zeile = []; feld = ''; continue; }\n    feld += z;\n  }\n  if (feld !== '' || zeile.length) { zeile.push(feld); zeilen.push(zeile); }\n  return zeilen;\n}\n\nfunction trennerFinden(kopfzeile) {\n  const treffer = TRENNZEICHEN\n    .map(t => ({ t, anzahl: (kopfzeile.match(new RegExp(`\\\\${t}`, 'g')) || []).length }))\n    .filter(x => x.anzahl > 0)\n    .sort((a, b) => b.anzahl - a.anzahl);\n\n  if (!treffer.length) {\n    throw new Error('Die Kopfzeile enthaelt kein bekanntes Trennzeichen '\n                  + `(gesucht: ${TRENNZEICHEN.map(t => t === '\\t' ? 'Tab' : t).join(' ')})`);\n  }\n  if (treffer.length > 1 && treffer[0].anzahl === treffer[1].anzahl) {\n    throw new Error(`Trennzeichen nicht eindeutig: \"${treffer[0].t}\" und `\n                  + `\"${treffer[1].t}\" kommen gleich oft vor`);\n  }\n  return treffer[0].t;\n}\n\nconst ausgabe = [];\nconst eintraege = $input.all();\n\nfor (let i = 0; i < eintraege.length; i++) {\n  const datei = eintraege[i].binary?.data?.fileName || `datei-${i + 1}.csv`;\n  const puffer = await this.helpers.getBinaryDataBuffer(i, 'data');\n  // Byte Order Mark entfernen - Excel schreibt ihn beim Speichern als CSV UTF-8.\n  const text = puffer.toString('utf8').replace(/^﻿/, '');\n\n  if (!text.trim()) {\n    ausgabe.push({ json: { __datei: datei, __zeile: 0, __fehler: 'Datei ist leer' } });\n    continue;\n  }\n\n  let trenner;\n  try {\n    trenner = trennerFinden(text.split(/\\r?\\n/, 1)[0]);\n  } catch (e) {\n    ausgabe.push({ json: { __datei: datei, __zeile: 1, __fehler: e.message } });\n    continue;\n  }\n\n  const zeilen = zerlegen(text, trenner);\n  const kopf = zeilen[0].map(s => s.trim().toLowerCase().replace(/^﻿/, ''));\n\n  for (let z = 1; z < zeilen.length; z++) {\n    const felder = zeilen[z];\n    if (felder.every(f => f.trim() === '')) continue;   // Leerzeile ueberspringen\n\n    const datensatz = { __datei: datei, __zeile: z + 1 };\n    if (felder.length !== kopf.length) {\n      datensatz.__fehler = `${felder.length} Felder, die Kopfzeile hat ${kopf.length}`;\n    }\n    kopf.forEach((spalte, s) => { datensatz[spalte] = (felder[s] ?? '').trim(); });\n    ausgabe.push({ json: datensatz });\n  }\n}\n\nreturn ausgabe;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        96
+      ],
+      "name": "CSV-Zeilen lesen"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---------------------------------------------------------------------------\n// CSV-Zeilen pruefen und zu Rechnungen buendeln.\n// Modus: \"Run Once for All Items\" - herein kommt ein Eintrag je CSV-Zeile,\n// heraus geht ein Eintrag je Rechnung. Mehr Eintraege ausgeben als hereinkamen\n// kann ein Code-Knoten nur in diesem Modus, weniger ebenso.\n//\n// Leitsatz wie im Python-Teil: niemals raten. Was nicht eindeutig ist, wird\n// zum Problemfall und nicht zu einer Schaetzung. Der IF-Knoten dahinter\n// trennt anhand von \"ok\" die beiden Wege.\n// ---------------------------------------------------------------------------\n\n// --- Einstellungen, die ein Kunde anpassen wuerde --------------------------\nconst PFLICHTSPALTEN = [\n  'rechnungsnummer', 'rechnungsdatum', 'kundennummer', 'kunde',\n  'strasse', 'plz_ort', 'position', 'beschreibung',\n  'menge', 'einheit', 'einzelpreis', 'mwst_satz',\n];\nconst ERLAUBTE_MWST = [0, 7, 19];\n// Zahlen kommen in deutscher Schreibweise: das Komma trennt die Nachkommastellen.\nconst DEZIMALTRENNER = ',';\n// ---------------------------------------------------------------------------\n\nconst zeilen = $input.all();\nconst problemfaelle = [];\nconst rechnungen = new Map();\n// Je Rechnungsnummer: wie viele Zeilen insgesamt, wie viele davon fehlerhaft.\n// Ist auch nur eine Zeile kaputt, entsteht fuer diese Nummer kein PDF -\n// sonst fehlte auf der Rechnung stillschweigend eine Position.\nconst zeilenJeRechnung = new Map();\nconst kaputtJeRechnung = new Map();\n\nfunction meldung(datei, zeilennr, nummer, grund) {\n  problemfaelle.push({\n    json: { ok: false, datei, zeile: zeilennr, rechnungsnummer: nummer, problem: grund },\n  });\n  if (nummer && zeilennr !== '') {\n    kaputtJeRechnung.set(nummer, (kaputtJeRechnung.get(nummer) || 0) + 1);\n  }\n}\n\n// Betrag nach den Regeln des PDF-Extractors: der Trenner muss benannt sein,\n// und was auf beide Weisen lesbar waere, wird abgelehnt statt geraten.\nfunction betrag(roh) {\n  const s = String(roh == null ? '' : roh).trim().replace(/[\\s ]/g, '');\n  if (s === '') throw new Error('Zahl fehlt');\n  if (!/^-?[\\d.,]+$/.test(s)) throw new Error(`\"${roh}\" ist keine Zahl`);\n\n  const komma = s.lastIndexOf(',');\n  const punkt = s.lastIndexOf('.');\n  const punkte = (s.match(/\\./g) || []).length;\n\n  if ((s.match(/,/g) || []).length > 1) {\n    throw new Error(`\"${roh}\" enthaelt mehr als ein Komma`);\n  }\n  if (komma !== -1 && punkt > komma) {\n    throw new Error(`\"${roh}\" mischt Punkt und Komma in ungewohnter Reihenfolge`);\n  }\n  if (komma === -1 && punkte === 1) {\n    // Kein Komma, genau ein Punkt: \"1.234\" heisst auf Deutsch 1234,\n    // auf Englisch 1,234. Beides ist vertretbar, also wird nicht geraten.\n    if (s.length - punkt - 1 === 3) {\n      throw new Error(`\"${roh}\" ist zweideutig - bitte den Dezimaltrenner `\n                    + `\"${DEZIMALTRENNER}\" benutzen`);\n    }\n    throw new Error(`\"${roh}\" benutzt den Punkt als Dezimaltrenner, `\n                  + `erwartet wird \"${DEZIMALTRENNER}\"`);\n  }\n\n  // Formpruefung vor dem Rechnen: \"1.2.00\" wuerde sonst still zu 1200.\n  const vorkomma = s.replace(/^-/, '').split(',')[0];\n  if (vorkomma.includes('.')) {\n    const gruppen = vorkomma.split('.');\n    if (gruppen.slice(1).some(g => g.length !== 3)\n        || gruppen[0].length < 1 || gruppen[0].length > 3) {\n      throw new Error(`\"${roh}\" hat keine saubere Tausendergliederung`);\n    }\n  }\n\n  const zahl = Number(s.replace(/\\./g, '').replace(',', '.'));\n  if (!Number.isFinite(zahl)) throw new Error(`\"${roh}\" ist keine Zahl`);\n  return zahl;\n}\n\nfunction datum(roh) {\n  const s = String(roh == null ? '' : roh).trim();\n  const m = s.match(/^(\\d{2})\\.(\\d{2})\\.(\\d{4})$/);\n  if (!m) throw new Error(`\"${roh}\" ist kein Datum im Format TT.MM.JJJJ`);\n  const t = Number(m[1]), mo = Number(m[2]), j = Number(m[3]);\n  const d = new Date(Date.UTC(j, mo - 1, t));\n  if (d.getUTCFullYear() !== j || d.getUTCMonth() !== mo - 1 || d.getUTCDate() !== t) {\n    throw new Error(`\"${roh}\" gibt es im Kalender nicht`);\n  }\n  return s;\n}\n\n// --- Durchlauf -------------------------------------------------------------\nfor (const eintrag of zeilen) {\n  const z = eintrag.json;\n  const datei = z.__datei || 'unbekannt.csv';\n  const zeilennr = z.__zeile ?? '';\n  const nummer = String(z.rechnungsnummer ?? '').trim();\n  if (nummer) zeilenJeRechnung.set(nummer, (zeilenJeRechnung.get(nummer) || 0) + 1);\n\n  // Was schon beim Einlesen aufgefallen ist, wird nicht noch einmal geprueft.\n  if (z.__fehler) {\n    meldung(datei, zeilennr, nummer, z.__fehler);\n    continue;\n  }\n\n  const fehlend = PFLICHTSPALTEN.filter(s => !(s in z));\n  if (fehlend.length) {\n    meldung(datei, zeilennr, nummer, `Spalten fehlen: ${fehlend.join(', ')}`);\n    continue;\n  }\n\n  if (!nummer) {\n    meldung(datei, zeilennr, '', 'Rechnungsnummer ist leer');\n    continue;\n  }\n\n  let posten;\n  try {\n    const satz = betrag(z.mwst_satz);\n    if (!ERLAUBTE_MWST.includes(satz)) {\n      throw new Error(`MwSt-Satz ${satz} ist nicht vorgesehen `\n                    + `(erlaubt: ${ERLAUBTE_MWST.join(', ')})`);\n    }\n    posten = {\n      position: Number(String(z.position).trim()),\n      beschreibung: String(z.beschreibung ?? '').trim(),\n      menge: betrag(z.menge),\n      einheit: String(z.einheit ?? '').trim(),\n      einzelpreis: betrag(z.einzelpreis),\n      mwst_satz: satz,\n      zeile: zeilennr,\n    };\n    if (!Number.isInteger(posten.position) || posten.position < 1) {\n      throw new Error(`Position \"${z.position}\" ist keine laufende Nummer`);\n    }\n    if (!posten.beschreibung) throw new Error('Beschreibung ist leer');\n  } catch (e) {\n    meldung(datei, zeilennr, nummer, e.message);\n    continue;\n  }\n\n  const kopf = {\n    rechnungsnummer: nummer,\n    kundennummer: String(z.kundennummer ?? '').trim(),\n    kunde: String(z.kunde ?? '').trim(),\n    strasse: String(z.strasse ?? '').trim(),\n    plz_ort: String(z.plz_ort ?? '').trim(),\n  };\n  try {\n    kopf.rechnungsdatum = datum(z.rechnungsdatum);\n  } catch (e) {\n    meldung(datei, zeilennr, nummer, e.message);\n    continue;\n  }\n\n  if (!rechnungen.has(nummer)) {\n    rechnungen.set(nummer, { kopf, datei, posten: [], fehler: [] });\n  }\n  const r = rechnungen.get(nummer);\n\n  // Die Kopfdaten muessen ueber alle Zeilen einer Rechnung zusammenpassen.\n  // Zwei verschiedene Kunden unter einer Nummer sind ein Datenfehler, kein Fall\n  // fuer \"der erste gewinnt\".\n  for (const feld of Object.keys(kopf)) {\n    if (r.kopf[feld] !== kopf[feld]) {\n      r.fehler.push(`Zeile ${zeilennr}: ${feld} lautet \"${kopf[feld]}\", `\n                  + `weiter oben in derselben Rechnung \"${r.kopf[feld]}\"`);\n    }\n  }\n  if (r.posten.some(p => p.position === posten.position)) {\n    r.fehler.push(`Zeile ${zeilennr}: Position ${posten.position} kommt doppelt vor`);\n  }\n  r.posten.push(posten);\n}\n\n// --- Ergebnis --------------------------------------------------------------\nconst fertig = [];\nfor (const [nummer, r] of rechnungen) {\n  if (r.fehler.length) {\n    // Lieber gar keine Rechnung als eine halbe: die Widersprueche wandern in\n    // den Problembericht, es entsteht kein PDF.\n    for (const f of r.fehler) meldung(r.datei, '', nummer, f);\n    continue;\n  }\n  const kaputt = kaputtJeRechnung.get(nummer) || 0;\n  if (kaputt) {\n    meldung(r.datei, '', nummer,\n      `Keine Rechnung erstellt: ${kaputt} von ${zeilenJeRechnung.get(nummer)} Zeilen `\n      + `fehlerhaft, das PDF waere unvollstaendig`);\n    continue;\n  }\n  r.posten.sort((a, b) => a.position - b.position);\n\n  let netto = 0;\n  const steuer = new Map();\n  for (const p of r.posten) {\n    p.betrag = Math.round(p.menge * p.einzelpreis * 100) / 100;\n    netto += p.betrag;\n    steuer.set(p.mwst_satz, (steuer.get(p.mwst_satz) || 0) + p.betrag);\n  }\n  netto = Math.round(netto * 100) / 100;\n\n  const steuerzeilen = [...steuer.entries()]\n    .sort((a, b) => a[0] - b[0])\n    .map(([satz, basis]) => {\n      const gerundet = Math.round(basis * 100) / 100;\n      return { satz, basis: gerundet, betrag: Math.round(gerundet * satz) / 100 };\n    });\n  const steuersumme = Math.round(steuerzeilen.reduce((a, s) => a + s.betrag, 0) * 100) / 100;\n\n  fertig.push({\n    json: {\n      ok: true,\n      ...r.kopf,\n      datei: r.datei,\n      posten: r.posten,\n      netto,\n      steuerzeilen,\n      steuersumme,\n      brutto: Math.round((netto + steuersumme) * 100) / 100,\n    },\n  });\n}\n\nfertig.sort((a, b) =>\n  a.json.rechnungsnummer.localeCompare(b.json.rechnungsnummer, 'de', { numeric: true }));\n\nreturn [...fertig, ...problemfaelle];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        96
+      ],
+      "name": "Rechnungen pruefen"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "vollstaendig",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        96
+      ],
+      "name": "Rechnung vollstaendig?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---------------------------------------------------------------------------\n// Aus jeder geprueften Rechnung ein PDF bauen.\n// Modus: \"Run Once for All Items\" - je Eintrag ein PDF im Binaerfeld \"data\".\n//\n// Warum von Hand und nicht mit pdfkit: im offiziellen n8n-Image laesst sich\n// kein npm-Paket nachinstallieren, und NODE_FUNCTION_ALLOW_EXTERNAL hilft nur\n// bei Paketen, die schon im Container liegen. Ein PDF mit den 14 eingebauten\n// Schriften ist aber ein ueberschaubares Format: Objekte, eine Positionsliste\n// (xref) mit Byte-Abstaenden, ein Anhang. Genau das steht hier unten.\n// ---------------------------------------------------------------------------\n\n// --- Absender: die einzige Stelle, die ein Kunde anpassen muss -------------\nconst ABSENDER = {\n  zeilen: ['Musterbetrieb GmbH', 'Beispielweg 1', '83454 Anger'],\n  fuss: [\n    'Musterbetrieb GmbH · Beispielweg 1 · 83454 Anger · USt-IdNr. DE000000000',\n    'Bankverbindung: Musterbank · IBAN DE00 0000 0000 0000 0000 00 · BIC MUSTDEFFXXX',\n  ],\n  zahlungsziel: 'Zahlbar ohne Abzug innerhalb von 14 Tagen nach Rechnungserhalt.',\n};\n// ---------------------------------------------------------------------------\n\n// ===========================================================================\n// Teil 1: Schrift\n// ===========================================================================\n\n// Zeichenbreiten der eingebauten Helvetica in 1/1000 der Schriftgroesse.\n// Ohne sie laesst sich nichts rechtsbuendig setzen - und krumme Betragsspalten\n// sind das Erste, was auf einer Rechnung auffaellt.\nconst BREITEN_NORMAL = {};\nconst BREITEN_FETT = {};\n(function breitenAufbauen() {\n  const normal =\n    '278 278 355 556 556 889 667 191 333 333 389 584 278 333 278 278 ' +   // 32-47\n    '556 556 556 556 556 556 556 556 556 556 278 278 584 584 584 556 ' +   // 48-63\n    '1015 667 667 722 722 667 611 778 722 278 500 667 556 833 722 778 ' +  // 64-79\n    '667 778 722 667 611 722 667 944 667 667 611 278 278 278 469 556 ' +   // 80-95\n    '333 556 556 500 556 556 278 556 556 222 222 500 222 833 556 556 ' +   // 96-111\n    '556 556 333 500 278 556 500 722 500 500 500 334 260 334 584';         // 112-126\n  const fett =\n    '278 333 474 556 556 889 722 238 333 333 389 584 278 333 278 278 ' +\n    '556 556 556 556 556 556 556 556 556 556 333 333 584 584 584 611 ' +\n    '975 722 722 722 722 667 611 778 722 278 556 722 611 833 722 778 ' +\n    '667 778 722 667 611 722 667 944 667 667 611 333 278 333 584 556 ' +\n    '333 556 611 556 611 556 333 611 611 278 278 556 278 889 611 611 ' +\n    '611 611 389 556 333 611 556 778 556 556 500 389 280 389 584';\n  normal.trim().split(/\\s+/).forEach((b, i) => { BREITEN_NORMAL[32 + i] = Number(b); });\n  fett.trim().split(/\\s+/).forEach((b, i) => { BREITEN_FETT[32 + i] = Number(b); });\n\n  // Umlaute und Zeichen aus dem oberen WinAnsi-Bereich. In Helvetica ist ein\n  // Buchstabe mit Akzent genauso breit wie der Buchstabe darunter.\n  const wie = { 196: 65, 214: 79, 220: 85, 228: 97, 246: 111, 252: 117,\n                233: 101, 232: 101, 224: 97 };\n  for (const [zeichen, vorbild] of Object.entries(wie)) {\n    BREITEN_NORMAL[zeichen] = BREITEN_NORMAL[vorbild];\n    BREITEN_FETT[zeichen] = BREITEN_FETT[vorbild];\n  }\n  // Eigene Breiten laut Helvetica-AFM\n  BREITEN_NORMAL[223] = 611; BREITEN_FETT[223] = 611;   // ß\n  BREITEN_NORMAL[128] = 556; BREITEN_FETT[128] = 556;   // €\n  BREITEN_NORMAL[167] = 556; BREITEN_FETT[167] = 556;   // §\n  BREITEN_NORMAL[176] = 400; BREITEN_FETT[176] = 400;   // °\n  BREITEN_NORMAL[183] = 278; BREITEN_FETT[183] = 278;   // ·\n})();\n\n// WinAnsiEncoding deckt Latin-1 ab und ein paar Sonderzeichen davor.\n// Was nicht hineinpasst, wird ersetzt - und das steht spaeter im Protokoll,\n// damit niemand ein stillschweigend verstuemmeltes PDF verschickt.\nconst ERSATZ = { '€': '\\x80', '–': '-', '—': '-', '‘': \"'\",\n                 '’': \"'\", '“': '\"', '”': '\"', '•': '\\xB7' };\nconst verstuemmelt = new Set();\n\nfunction nachWinAnsi(text) {\n  let aus = '';\n  for (const zeichen of String(text ?? '')) {\n    if (ERSATZ[zeichen] !== undefined) { aus += ERSATZ[zeichen]; continue; }\n    const nr = zeichen.codePointAt(0);\n    if (nr >= 32 && nr <= 126) { aus += zeichen; continue; }\n    if (nr >= 160 && nr <= 255) { aus += zeichen; continue; }\n    if (zeichen === '\\t') { aus += ' '; continue; }\n    verstuemmelt.add(zeichen);\n    aus += '?';\n  }\n  return aus;\n}\n\nfunction breite(text, groesse, fett) {\n  const tabelle = fett ? BREITEN_FETT : BREITEN_NORMAL;\n  let summe = 0;\n  for (let i = 0; i < text.length; i++) {\n    summe += tabelle[text.charCodeAt(i)] ?? 556;\n  }\n  return summe * groesse / 1000;\n}\n\n// Zu langen Text kuerzen statt ueber den Rand laufen zu lassen.\nfunction kuerzen(text, maxBreite, groesse, fett) {\n  if (breite(text, groesse, fett) <= maxBreite) return text;\n  let kurz = text;\n  while (kurz.length > 1 && breite(kurz + '...', groesse, fett) > maxBreite) {\n    kurz = kurz.slice(0, -1);\n  }\n  return kurz + '...';\n}\n\n// ===========================================================================\n// Teil 2: Seite und Inhaltsstrom\n// ===========================================================================\n\nconst A4 = { breite: 595.28, hoehe: 841.89 };\nconst RAND = { links: 56.7, rechts: 56.7, oben: 56.7, unten: 70 };\n\nfunction escapePdf(text) {\n  return text.replace(/([\\\\()])/g, '\\\\$1');\n}\n\nclass Seite {\n  constructor() { this.teile = []; }\n  text(x, y, inhalt, groesse, fett, farbe) {\n    const t = escapePdf(nachWinAnsi(inhalt));\n    const f = farbe || [0, 0, 0];\n    this.teile.push(\n      `BT ${f[0]} ${f[1]} ${f[2]} rg /${fett ? 'F2' : 'F1'} ${groesse} Tf ` +\n      `1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm (${t}) Tj ET`);\n  }\n  textRechts(x, y, inhalt, groesse, fett, farbe) {\n    const t = nachWinAnsi(inhalt);\n    this.text(x - breite(t, groesse, fett), y, inhalt, groesse, fett, farbe);\n  }\n  linie(x1, y1, x2, y2, staerke, farbe) {\n    const f = farbe || [0, 0, 0];\n    this.teile.push(\n      `${f[0]} ${f[1]} ${f[2]} RG ${staerke} w ` +\n      `${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S`);\n  }\n  flaeche(x, y, b, h, farbe) {\n    this.teile.push(\n      `${farbe[0]} ${farbe[1]} ${farbe[2]} rg ` +\n      `${x.toFixed(2)} ${y.toFixed(2)} ${b.toFixed(2)} ${h.toFixed(2)} re f`);\n  }\n  get inhalt() { return this.teile.join('\\n'); }\n}\n\n// Setzt die Objekte zusammen und rechnet die Byte-Abstaende fuer die xref aus.\n// Ein falscher Abstand hier und der Reader meldet \"damaged file\" - deshalb\n// wird strikt in latin1 gezaehlt, wo ein Zeichen genau ein Byte ist.\nfunction pdfBauen(seiten) {\n  const objekte = [];\n  const nr = () => objekte.length + 1;\n\n  const katalogNr = nr(); objekte.push(null);          // 1, wird nachgetragen\n  const seitenbaumNr = nr(); objekte.push(null);       // 2\n  const fontNormalNr = nr();\n  objekte.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica '\n             + '/Encoding /WinAnsiEncoding >>');\n  const fontFettNr = nr();\n  objekte.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold '\n             + '/Encoding /WinAnsiEncoding >>');\n\n  const seitenNummern = [];\n  for (const seite of seiten) {\n    const strom = seite.inhalt;\n    const stromNr = nr();\n    objekte.push(`<< /Length ${Buffer.byteLength(strom, 'latin1')} >>\\n`\n               + `stream\\n${strom}\\nendstream`);\n    const seiteNr = nr();\n    objekte.push(\n      `<< /Type /Page /Parent ${seitenbaumNr} 0 R `\n      + `/MediaBox [0 0 ${A4.breite} ${A4.hoehe}] `\n      + `/Resources << /Font << /F1 ${fontNormalNr} 0 R /F2 ${fontFettNr} 0 R >> >> `\n      + `/Contents ${stromNr} 0 R >>`);\n    seitenNummern.push(seiteNr);\n  }\n\n  objekte[katalogNr - 1] = `<< /Type /Catalog /Pages ${seitenbaumNr} 0 R >>`;\n  objekte[seitenbaumNr - 1] =\n    `<< /Type /Pages /Kids [${seitenNummern.map(n => `${n} 0 R`).join(' ')}] `\n    + `/Count ${seitenNummern.length} >>`;\n\n  let text = '%PDF-1.4\\n%\\xE2\\xE3\\xCF\\xD3\\n';\n  const abstaende = [];\n  for (let i = 0; i < objekte.length; i++) {\n    abstaende.push(Buffer.byteLength(text, 'latin1'));\n    text += `${i + 1} 0 obj\\n${objekte[i]}\\nendobj\\n`;\n  }\n  const xrefAbstand = Buffer.byteLength(text, 'latin1');\n  text += `xref\\n0 ${objekte.length + 1}\\n0000000000 65535 f \\n`;\n  for (const a of abstaende) {\n    text += `${String(a).padStart(10, '0')} 00000 n \\n`;\n  }\n  text += `trailer\\n<< /Size ${objekte.length + 1} /Root ${katalogNr} 0 R >>\\n`\n        + `startxref\\n${xrefAbstand}\\n%%EOF\\n`;\n\n  return Buffer.from(text, 'latin1');\n}\n\n// ===========================================================================\n// Teil 3: Das Rechnungsformular\n// ===========================================================================\n\nconst GRAU = [0.45, 0.45, 0.45];\nconst LINIE = [0.75, 0.75, 0.75];\nconst KOPFBALKEN = [0.93, 0.94, 0.96];\n\nfunction euro(betrag) {\n  const v = Math.abs(betrag).toFixed(2).replace('.', ',');\n  const mit = v.replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.');\n  return (betrag < 0 ? '-' : '') + mit;\n}\nfunction menge(wert) {\n  return (Number.isInteger(wert) ? String(wert) : wert.toFixed(2)).replace('.', ',');\n}\n\nfunction rechnungBauen(r) {\n  const seiten = [];\n  const links = RAND.links;\n  const rechts = A4.breite - RAND.rechts;\n\n  // Spalten der Positionstabelle. Die Zahlen sind die rechte Kante der\n  // jeweiligen Spalte; nur \"pos\" und \"text\" werden linksbuendig gesetzt.\n  // Die Abstaende sind so gewaehlt, dass auch die fetten Ueberschriften\n  // (\"Einzelpreis\", \"Betrag EUR\") nicht in die Nachbarspalte ragen.\n  const spalten = {\n    pos:    links,\n    text:   links + 32,\n    menge:  links + 290,\n    einzel: links + 375,\n    mwst:   links + 428,\n    betrag: rechts,\n  };\n  // Rechte Kante der Beschriftungen im Summenblock.\n  const summenBeschriftung = rechts - 70;\n\n  let seite, y, seitenzahl = 0;\n\n  function fussZeile(s) {\n    s.linie(links, RAND.unten, rechts, RAND.unten, 0.5, LINIE);\n    let fy = RAND.unten - 12;\n    for (const zeile of ABSENDER.fuss) {\n      s.text(links, fy, zeile, 7, false, GRAU);\n      fy -= 9;\n    }\n  }\n\n  function tabellenkopf() {\n    seite.flaeche(links, y - 4, rechts - links, 16, KOPFBALKEN);\n    seite.text(spalten.pos, y, 'Pos', 8, true);\n    seite.text(spalten.text, y, 'Beschreibung', 8, true);\n    seite.textRechts(spalten.menge, y, 'Menge', 8, true);\n    seite.textRechts(spalten.einzel, y, 'Einzelpreis', 8, true);\n    seite.textRechts(spalten.mwst, y, 'MwSt', 8, true);\n    seite.textRechts(spalten.betrag, y, 'Betrag EUR', 8, true);\n    y -= 18;\n  }\n\n  function neueSeite(mitBriefkopf) {\n    seite = new Seite();\n    seiten.push(seite);\n    seitenzahl++;\n    y = A4.hoehe - RAND.oben;\n\n    if (mitBriefkopf) {\n      // Absender rechts oben\n      let ay = y;\n      for (let i = 0; i < ABSENDER.zeilen.length; i++) {\n        seite.textRechts(rechts, ay, ABSENDER.zeilen[i], i === 0 ? 11 : 9,\n                         i === 0, i === 0 ? null : GRAU);\n        ay -= i === 0 ? 15 : 11;\n      }\n      // Anschriftenfeld links, auf DIN-5008-Hoehe\n      let ky = y - 45;\n      seite.text(links, ky + 14, `${ABSENDER.zeilen[0]} · ${ABSENDER.zeilen[1]} · `\n                               + `${ABSENDER.zeilen[2]}`, 6.5, false, GRAU);\n      for (const zeile of [r.kunde, r.strasse, r.plz_ort]) {\n        if (zeile) { seite.text(links, ky, zeile, 10.5, false); ky -= 13; }\n      }\n\n      y = ky - 42;\n      seite.text(links, y, `Rechnung ${r.rechnungsnummer}`, 16, true);\n      y -= 20;\n      seite.text(links, y,\n        `Rechnungsdatum ${r.rechnungsdatum}   ·   Kundennummer ${r.kundennummer}`,\n        9, false, GRAU);\n      y -= 26;\n    } else {\n      seite.text(links, y, `Rechnung ${r.rechnungsnummer} · Fortsetzung`, 10, true);\n      y -= 24;\n    }\n    tabellenkopf();\n  }\n\n  neueSeite(true);\n\n  // --- Positionen ----------------------------------------------------------\n  for (const p of r.posten) {\n    // Platz fuer diese Zeile und die Summenblocks im Blick behalten\n    if (y < RAND.unten + 40) neueSeite(false);\n\n    const beschreibung = kuerzen(p.beschreibung, spalten.menge - spalten.text - 45, 9, false);\n    seite.text(spalten.pos, y, String(p.position), 9);\n    seite.text(spalten.text, y, beschreibung, 9);\n    seite.textRechts(spalten.menge, y,\n      `${menge(p.menge)}${p.einheit ? ' ' + p.einheit : ''}`, 9);\n    seite.textRechts(spalten.einzel, y, euro(p.einzelpreis), 9);\n    seite.textRechts(spalten.mwst, y, `${p.mwst_satz} %`, 9);\n    seite.textRechts(spalten.betrag, y, euro(p.betrag), 9);\n    y -= 6;\n    seite.linie(links, y, rechts, y, 0.4, LINIE);\n    y -= 12;\n  }\n\n  // --- Summen --------------------------------------------------------------\n  const summenHoehe = 26 + r.steuerzeilen.length * 13 + 30;\n  if (y < RAND.unten + summenHoehe) neueSeite(false);\n\n  y -= 6;\n  seite.textRechts(summenBeschriftung, y, 'Nettobetrag', 9);\n  seite.textRechts(spalten.betrag, y, euro(r.netto), 9);\n  y -= 13;\n  for (const s of r.steuerzeilen) {\n    seite.textRechts(summenBeschriftung, y,\n      `zzgl. ${s.satz} % MwSt auf ${euro(s.basis)}`, 9);\n    seite.textRechts(spalten.betrag, y, euro(s.betrag), 9);\n    y -= 13;\n  }\n  y -= 2;\n  seite.linie(spalten.einzel - 60, y + 6, rechts, y + 6, 0.8, [0.2, 0.2, 0.2]);\n  y -= 8;\n  seite.textRechts(summenBeschriftung, y, 'Gesamtbetrag', 11, true);\n  seite.textRechts(spalten.betrag, y, euro(r.brutto), 11, true);\n\n  y -= 34;\n  if (y < RAND.unten + 20) { neueSeite(false); y -= 10; }\n  seite.text(links, y, ABSENDER.zahlungsziel, 9);\n\n  // --- Fusszeilen und Seitenzahlen -----------------------------------------\n  seiten.forEach((s, i) => {\n    fussZeile(s);\n    s.textRechts(rechts, RAND.unten - 12, `Seite ${i + 1} von ${seiten.length}`,\n                 7, false, GRAU);\n  });\n\n  return pdfBauen(seiten);\n}\n\n// ===========================================================================\n// Durchlauf\n// ===========================================================================\n\n// Der Schreibknoten dahinter legt keine Ordner an.\nconst ZIELORDNER = '/data/ausgabe/rechnungen';\ntry {\n  require('fs').mkdirSync(ZIELORDNER, { recursive: true });\n} catch (e) {\n  // Scheitert es hier, meldet sich der Schreibknoten mit einer klaren Meldung.\n}\n\nconst ausgabe = [];\nfor (const eintrag of $input.all()) {\n  const r = eintrag.json;\n  verstuemmelt.clear();\n\n  const bytes = rechnungBauen(r);\n  const dateiname = `Rechnung_${String(r.rechnungsnummer).replace(/[^\\w.-]/g, '_')}.pdf`;\n\n  ausgabe.push({\n    json: {\n      rechnungsnummer: r.rechnungsnummer,\n      kunde: r.kunde,\n      datei: r.datei,\n      pdf: dateiname,\n      posten: r.posten.length,\n      brutto: r.brutto,\n      groesse: bytes.length,\n      ersetzteZeichen: [...verstuemmelt],\n    },\n    binary: {\n      data: await this.helpers.prepareBinaryData(bytes, dateiname, 'application/pdf'),\n    },\n  });\n}\n\nreturn ausgabe;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ],
+      "name": "Rechnung als PDF"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/ausgabe/rechnungen/{{ $json.pdf }}",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        0
+      ],
+      "name": "PDF schreiben"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---------------------------------------------------------------------------\n// Alle Beanstandungen in eine CSV, die man in Excel oeffnen kann.\n// Modus: \"Run Once for All Items\".\n//\n// Der Dateiname bekommt einen Zeitstempel. Ohne ihn bliebe der Bericht des\n// letzten Laufs liegen und saehe beim naechsten Blick aus wie der aktuelle -\n// derselbe Fallstrick wie beim Vorgaengerworkflow.\n// ---------------------------------------------------------------------------\n\nfunction stempel() {\n  // 'sv-SE' liefert 2026-09-18 21:04:11, also fast ISO. Die Zeitzone muss\n  // ausdruecklich mit: der Task-Runner von n8n laeuft in UTC, auch wenn der\n  // Container auf Europe/Berlin steht.\n  const s = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' });\n  return s.slice(0, 10) + '_' + s.slice(11, 16).replace(':', '-');\n}\n\nconst SPALTEN = ['datei', 'zeile', 'rechnungsnummer', 'problem'];\n\nfunction feld(wert) {\n  const s = String(wert ?? '');\n  return /[\";\\n]/.test(s) ? `\"${s.replace(/\"/g, '\"\"')}\"` : s;\n}\n\nconst faelle = $input.all().map(e => e.json);\n\nconst zeilen = [SPALTEN.join(';')];\nfor (const f of faelle) zeilen.push(SPALTEN.map(s => feld(f[s])).join(';'));\n\n// Byte Order Mark voran, sonst zeigt Excel die Umlaute als Kraut an.\nconst text = '﻿' + zeilen.join('\\r\\n') + '\\r\\n';\nconst zielname = `problemfaelle_${stempel()}.csv`;\n\nconst binaer = await this.helpers.prepareBinaryData(\n  Buffer.from(text, 'utf8'), zielname, 'text/csv');\n\nreturn [{\n  json: {\n    zielname,\n    anzahl: faelle.length,\n    // Welche Quelldateien betroffen sind, entscheidet nachher darueber,\n    // ob die Datei weggeraeumt oder zum Nachsehen hingelegt wird.\n    betroffeneDateien: [...new Set(faelle.map(f => f.datei))],\n  },\n  binary: { data: binaer },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        288
+      ],
+      "name": "Problembericht"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "=/data/ausgabe/{{ $json.zielname }}",
+        "dataPropertyName": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        288
+      ],
+      "name": "Problembericht schreiben"
+    },
+    {
+      "parameters": {
+        "numberInputs": 2
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1568,
+        144
+      ],
+      "name": "Zweige zusammenfuehren"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---------------------------------------------------------------------------\n// Die abgearbeiteten CSV-Dateien aus dem Eingang nehmen.\n// Modus: \"Run Once for All Items\".\n//\n// Erst hier, nachdem alle Ausgaben geschrieben sind. Bricht vorher etwas ab,\n// bleiben die Dateien liegen und der naechste Lauf holt sie erneut.\n//\n// Sauber gelaufene Dateien wandern nach _beiseite, beanstandete nach pruefen -\n// so sieht man am Ordner, wo noch jemand hinschauen muss.\n//\n// Den Knoten \"Execute Command\" gibt es im offiziellen Image nicht mehr,\n// verschoben wird deshalb mit fs. Dafuer braucht der Container\n// NODE_FUNCTION_ALLOW_BUILTIN=fs.\n// ---------------------------------------------------------------------------\n\nconst fs = require('fs');\n\nconst EINGANG = '/data/csv';\nconst ERLEDIGT = '/data/_beiseite';\nconst NACHSEHEN = '/data/pruefen';\n\nfunction stempel() {\n  const s = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' });\n  return s.slice(0, 10) + '_' + s.slice(11, 16).replace(':', '-');\n}\n\nfunction eintraege(knoten) {\n  try {\n    return $(knoten).all();\n  } catch (e) {\n    return [];   // Zweig ist in diesem Lauf nicht angelaufen\n  }\n}\n\nconst quelldateien = eintraege('CSV-Dateien lesen')\n  .map(e => e.binary?.data?.fileName)\n  .filter(Boolean);\n\nconst beanstandet = new Set(\n  eintraege('Rechnungen pruefen')\n    .filter(e => e.json.ok === false)\n    .map(e => e.json.datei));\n\nconst jetzt = stempel();\nconst verschoben = [];\n\nfor (const ordner of [ERLEDIGT, NACHSEHEN]) {\n  fs.mkdirSync(ordner, { recursive: true });\n}\n\nfor (const name of quelldateien) {\n  const ziel = beanstandet.has(name) ? NACHSEHEN : ERLEDIGT;\n  const von = `${EINGANG}/${name}`;\n  const nach = `${ziel}/${jetzt}_${name}`;\n  try {\n    fs.renameSync(von, nach);\n    verschoben.push({ datei: name, nach: ziel, beanstandet: beanstandet.has(name) });\n  } catch (e) {\n    verschoben.push({ datei: name, nach: null, fehler: e.message });\n  }\n}\n\nreturn [{ json: { zeitpunkt: jetzt, verschoben } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        144
+      ],
+      "name": "Verarbeitete wegraeumen"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---------------------------------------------------------------------------\n// Eine Zeile je Lauf, angehaengt an /data/ausgabe/protokoll.txt.\n// Modus: \"Run Once for All Items\".\n//\n// Die Zahlen kommen von den Quellknoten, nicht aus dem Eingang - so stimmt die\n// Zaehlung auch, wenn ein Zweig gar nicht gelaufen ist.\n// ---------------------------------------------------------------------------\n\nfunction stempel() {\n  return new Date().toLocaleString('sv-SE', { timeZone: 'Europe/Berlin' });\n}\n\nfunction eintraege(knoten) {\n  try {\n    return $(knoten).all().filter(e => e.json && Object.keys(e.json).length > 0);\n  } catch (e) {\n    return [];\n  }\n}\n\nconst zeitpunkt = stempel();\nconst gelesen = eintraege('CSV-Zeilen lesen');\nconst rechnungen = eintraege('Rechnungen pruefen').filter(e => e.json.ok === true);\nconst probleme = eintraege('Rechnungen pruefen').filter(e => e.json.ok === false);\nconst pdfs = eintraege('Rechnung als PDF');\nconst aufraeumen = eintraege('Verarbeitete wegraeumen');\n\nconst dateien = [...new Set(gelesen.map(e => e.json.__datei))];\nconst brutto = rechnungen.reduce((a, e) => a + (e.json.brutto ?? 0), 0);\n\nlet zeile = `${zeitpunkt} | ${dateien.length} Datei(en) | ${gelesen.length} Zeilen`\n          + ` | ${pdfs.length} PDF | ${probleme.length} beanstandet`\n          + ` | brutto ${brutto.toFixed(2)}`;\n\n// Ersetzte Sonderzeichen kommen ins Protokoll, damit niemand ein still\n// verstuemmeltes PDF verschickt, ohne davon zu wissen.\nconst ersetzt = [...new Set(pdfs.flatMap(e => e.json.ersetzteZeichen || []))];\nif (ersetzt.length) {\n  zeile += `\\n    ~ Zeichen ersetzt: ${ersetzt.join(' ')}`;\n}\n\nfor (const e of probleme) {\n  const wo = e.json.zeile ? `Zeile ${e.json.zeile}` : e.json.rechnungsnummer;\n  zeile += `\\n    ! ${e.json.datei} ${wo}: ${e.json.problem}`;\n}\n\nfor (const v of aufraeumen[0]?.json?.verschoben || []) {\n  if (v.fehler) zeile += `\\n    ! ${v.datei} blieb liegen: ${v.fehler}`;\n}\n\nconst text = zeile + '\\n';\nconst binaer = await this.helpers.prepareBinaryData(\n  Buffer.from(text, 'utf8'), 'protokoll.txt', 'text/plain');\n\nreturn [{\n  json: {\n    zeitpunkt,\n    dateien: dateien.length,\n    zeilen: gelesen.length,\n    pdf: pdfs.length,\n    beanstandet: probleme.length,\n  },\n  binary: { data: binaer },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        144
+      ],
+      "name": "Protokollzeile"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/data/ausgabe/protokoll.txt",
+        "dataPropertyName": "data",
+        "options": {
+          "append": true
+        }
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        2240,
+        144
+      ],
+      "name": "Protokoll schreiben"
+    }
+  ],
+  "connections": {
+    "Manuell starten": {
+      "main": [
+        [
+          {
+            "node": "CSV-Dateien lesen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zeitplan": {
+      "main": [
+        [
+          {
+            "node": "CSV-Dateien lesen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CSV-Dateien lesen": {
+      "main": [
+        [
+          {
+            "node": "CSV-Zeilen lesen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nichts zu tun",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CSV-Zeilen lesen": {
+      "main": [
+        [
+          {
+            "node": "Rechnungen pruefen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rechnungen pruefen": {
+      "main": [
+        [
+          {
+            "node": "Rechnung vollstaendig?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rechnung vollstaendig?": {
+      "main": [
+        [
+          {
+            "node": "Rechnung als PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Problembericht",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rechnung als PDF": {
+      "main": [
+        [
+          {
+            "node": "PDF schreiben",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF schreiben": {
+      "main": [
+        [
+          {
+            "node": "Zweige zusammenfuehren",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Problembericht": {
+      "main": [
+        [
+          {
+            "node": "Problembericht schreiben",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Problembericht schreiben": {
+      "main": [
+        [
+          {
+            "node": "Zweige zusammenfuehren",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Zweige zusammenfuehren": {
+      "main": [
+        [
+          {
+            "node": "Verarbeitete wegraeumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verarbeitete wegraeumen": {
+      "main": [
+        [
+          {
+            "node": "Protokollzeile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Protokollzeile": {
+      "main": [
+        [
+          {
+            "node": "Protokoll schreiben",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
