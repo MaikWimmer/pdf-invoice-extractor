@@ -1,0 +1,5 @@
+# Binaerdateien nie anfassen: ein PDF mit umgeschriebenen Zeilenenden
+# hat falsche Byte-Abstaende in der xref-Tabelle und gilt als beschaedigt.
+*.pdf binary
+*.png binary
+*.xlsx binary
